@@ -66,6 +66,10 @@ namespace realsense_camera
 
     max_z_ = ZR300_MAX_Z;
 
+    device_time_translator_.reset(new cuckoo_time_translator::UnwrappedDeviceTimeTranslator(cuckoo_time_translator::ClockParameters(SECONDS_TO_NANOSECONDS),
+                              getPrivateNodeHandle().getNamespace(),
+                              cuckoo_time_translator::Defaults().setFilterAlgorithm(cuckoo_time_translator::FilterAlgorithm::ConvexHull)));
+
    
     BaseCbNodelet::onInit(); 
 
@@ -652,62 +656,48 @@ namespace realsense_camera
   {
     motion_handler_ = [&](rs::motion_data entry)
     {
-        
+        ros::Time time_now = ros::Time::now();
+        static geometry_msgs::Vector3 imu_linear_accel;
 
-        auto now = std::chrono::system_clock::now().time_since_epoch();
-        auto sys_time = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-        imu_ts_ = entry.timestamp_data.timestamp;//sys_time;
         if (entry.timestamp_data.source_id == RS_EVENT_IMU_GYRO)
         {
-          for (int i = 0; i < 3; ++i)
-          {
-            imu_angular_vel_[i] = entry.axes[i];
-            imu_linear_accel_[i] = 0.0;
-          }
-          imu_angular_vel_cov_[0] = 0.0;
-          imu_linear_accel_cov_[0] = -1.0;
-        }
-        else if (entry.timestamp_data.source_id == RS_EVENT_IMU_ACCEL)
-        {
-          for (int i = 0; i < 3; ++i)
-          {
-            imu_angular_vel_[i] = 0.0;
-            imu_linear_accel_[i] = entry.axes[i];
-          }
-          imu_angular_vel_cov_[0] = -1.0;
-          imu_linear_accel_cov_[0] = 0.0;
-        }
 
-     
+          geometry_msgs::Vector3 imu_angular_vel;
+          imu_angular_vel.x = entry.axes[0];
+          imu_angular_vel.y = entry.axes[1];
+          imu_angular_vel.z = entry.axes[2];
 
+          // Update time translation filter, only with gyro timestamps
+          device_time_translator_->update(static_cast<std::uint64_t>(entry.timestamp_data.timestamp * MILLISECONDS_TO_NANOSECONDS), time_now); // get nanosecond precision
+
+          //send IMU data
           sensor_msgs::Imu imu_msg = sensor_msgs::Imu();
-          imu_msg.header.stamp.nsec = imu_ts_*1000;
+          if (device_time_translator_->isReadyToTranslate())
+          {
+            imu_msg.header.stamp = device_time_translator_->translate(entry.timestamp_data.timestamp * MILLISECONDS_TO_NANOSECONDS);
+          }
+          else
+          {
+            ROS_WARN("device_time_translator is not ready yet, using ros::Time::now()");
+            imu_msg.header.stamp = ros::Time::now();
+          }
           imu_msg.header.frame_id = imu_optical_frame_id_;
 
-          imu_msg.orientation.x = 0.0;
-          imu_msg.orientation.y = 0.0;
-          imu_msg.orientation.z = 0.0;
-          imu_msg.orientation.w = 0.0; 
-          imu_msg.orientation_covariance = {-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          // Setting just the first element to -1.0 because device does not give orientation data
+          imu_msg.orientation_covariance[0] = -1.0;
 
-          imu_msg.angular_velocity.x = imu_angular_vel_[0];
-          imu_msg.angular_velocity.y = imu_angular_vel_[1];
-          imu_msg.angular_velocity.z = imu_angular_vel_[2];
-
-          imu_msg.linear_acceleration.x = imu_linear_accel_[0];
-          imu_msg.linear_acceleration.y = imu_linear_accel_[1];
-          imu_msg.linear_acceleration.z = imu_linear_accel_[2]; 
- 
-          for (int i = 0; i < 9; ++i)
-          {
-            imu_msg.angular_velocity_covariance[i] = imu_angular_vel_cov_[i];
-            imu_msg.linear_acceleration_covariance[i] = imu_linear_accel_cov_[i];
-          }
+          imu_msg.angular_velocity = imu_angular_vel;
+          imu_msg.linear_acceleration = imu_linear_accel;
 
           imu_publisher_.publish(imu_msg);
 
-          
-         
+        }
+        else if (entry.timestamp_data.source_id == RS_EVENT_IMU_ACCEL)
+        {
+          imu_linear_accel.x = entry.axes[0];
+          imu_linear_accel.y = entry.axes[1];
+          imu_linear_accel.z = entry.axes[2];
+        }
     };
 
     // Get timestamp that syncs all sensors.

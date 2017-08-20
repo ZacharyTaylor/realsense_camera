@@ -36,6 +36,10 @@
 
 namespace realsense_camera
 {
+    const double MILLISECONDS_TO_SECONDS = 0.001;
+    const int SECONDS_TO_NANOSECONDS = 1e9;
+    const int MILLISECONDS_TO_NANOSECONDS = 1e6;
+
     // Default Constants.
     const int STREAM_COUNT = 5;
     const int DEPTH_WIDTH = 480;

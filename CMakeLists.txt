@@ -28,6 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   rostest
   pcl_ros
+  cuckoo_time_translator
 )
 
 add_message_files(

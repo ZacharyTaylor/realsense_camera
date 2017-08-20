@@ -39,6 +39,7 @@
 #include <realsense_camera/GetIMUInfo.h>
 #include <realsense_camera/base_callback_nodelet.h>
 #include <sensor_msgs/Imu.h>
+#include <cuckoo_time_translator/DeviceTimeTranslator.h>
 
 
 namespace realsense_camera
@@ -69,6 +70,11 @@ namespace realsense_camera
     std::function<void(rs::motion_data)> motion_handler_;
     std::function<void(rs::timestamp_data)> timestamp_handler_;
 
+    // Cuckoo Time translator object.
+    std::unique_ptr<cuckoo_time_translator::UnwrappedDeviceTimeTranslator> device_time_translator_;
+
+    // Queue of timestamps to sync everything to IMU clock.
+    std::deque<rs::timestamp_data> timestamp_queue_;
 
     // Member Functions.
     virtual ~LR200MNodelet();
